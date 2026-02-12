@@ -119,7 +119,7 @@ if (!$token) {
             <select id="areaSelect">
                 <option value="">Select Area</option>
                 <option value="RM Warehouse">RM Warehouse</option>
-                <option value="Finished Goods Warehouse">Finished Goods Warehous</option>
+                <option value="Finished Goods Warehouse">Finished Goods Warehouse</option>
                 <option value="RM-AGV Warehouse">RM-AGV Warehouse</option>
             </select>
         </div>
