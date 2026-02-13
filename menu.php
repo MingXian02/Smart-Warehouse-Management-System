@@ -184,11 +184,11 @@ if (isset($_GET['logout'])) {
                 <div class="menu-grid">
                     <a href="?mode=sfi" class="menu-btn">
                         <div class="icon-box"><span class="material-symbols-outlined">barcode_scanner</span></div>
-                        Order Picking (SFI)
+                        Order Picking (SFI) 拣选
                     </a>
                     <a href="?mode=inbound" class="menu-btn inbound">
                         <div class="icon-box"><span class="material-symbols-outlined">move_up</span></div>
-                        Inbound Palletizing
+                        Inbound Palletizing 入库
                     </a>
                     <a href="empty_inbound_scanned.php" class="menu-btn empty-pallet">
                         <div class="icon-box"><span class="material-symbols-outlined">inventory_2</span></div>

@@ -70,7 +70,10 @@ foreach ($items as $item) {
         "groupNum" => (float)$item['qty'],  // Use actual quantity instead of 0
         "cascadeContainerNo" => $item['cascade'],
         "sorterChute" => $item['grid'], // Assuming grid = sorterChute
-        "slotNo" => $item['slot']
+        // Slot (skuAttr3) - 入库时：存储"总槽数@目标槽位"格式
+        "slotNo" => !empty($item['total']) && !empty($item['slot']) 
+            ? $item['total'] . '@' . $item['slot']  // 格式: "8@3" = 8个槽位，选第3个
+            : $item['slot']
     ];
 }
 

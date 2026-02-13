@@ -264,49 +264,66 @@ background: linear-gradient(135deg, #ff9a9e 0%, #fad0c4 20%, #fbc2eb 40%, #a18cd
                            oninput="validateItemQty(this)">
                 </div>
 
-                <!-- CONTAINER & AGV FIELDS -->
+
+                <!-- CONTAINER & AGV FIELDS WITH SLOT MEMORY -->
                 <div class="agv-container-section" style="margin-top:16px; padding-top:16px; border-top:1px solid #f1f5f9; display:none;">
                     <!-- Cascade Container -->
                     <div style="margin-bottom:12px;">
                         <label style="font-size:.75rem; font-weight:800; color:#475569;">Cascade Container</label>
                         <input type="text"
-                               class="cascade-input"
-                               value=""
-                               placeholder="Scan Container ID"
-                               data-item-id="<?php echo $itemId; ?>"
-                               style="width:100%; padding:10px; margin-top:4px; border-radius:8px; border:1px solid #cbd5e1;">
+                            class="cascade-input"
+                            value=""
+                            placeholder="Scan Container ID"
+                            data-item-id="<?php echo $itemId; ?>"
+                            style="width:100%; padding:10px; margin-top:4px; border-radius:8px; border:1px solid #cbd5e1;">
                     </div>
 
                     <!-- Grid Field -->
                     <div style="margin-bottom:12px;">
                         <label style="font-size:.75rem; font-weight:800; color:#475569;">Grid</label>
                         <input type="text"
-                               class="grid-input"
-                               value=""
-                               placeholder="Enter Grid"
-                               data-item-id="<?php echo $itemId; ?>"
-                               style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1;">
+                            class="grid-input"
+                            value=""
+                            placeholder="Enter Grid"
+                            data-item-id="<?php echo $itemId; ?>"
+                            oninput="handleGridInput(this)"
+                            style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1;">
                     </div>
 
-                    <!-- Slot and Total Fields -->
-                    <div style="display:flex; gap:8px;">
-                        <div style="flex:1;">
-                            <label style="font-size:.7rem; font-weight:800; color:#475569;">TARGET SLOT</label>
-                            <input type="number"
-                                   class="slot-input"
-                                   value=""
-                                   placeholder="Slot"
-                                   data-item-id="<?php echo $itemId; ?>"
-                                   style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1;">
+                    <!-- Total Slots (Set First) -->
+                    <div style="margin-bottom:12px;">
+                        <label style="font-size:.75rem; font-weight:800; color:#475569;">
+                            📊 TOTAL SLOTS 
+                            <span style="color:#10b981; font-size:0.7rem;">(Set this first!)</span>
+                        </label>
+                        <input type="number"
+                            class="total-input"
+                            value=""
+                            placeholder="How many slots?"
+                            min="1"
+                            max="99"
+                            data-item-id="<?php echo $itemId; ?>"
+                            onchange="handleTotalSlotsChange(this)"
+                            style="width:100%; padding:10px; border-radius:8px; border:2px solid #10b981; font-weight:700; font-size:1.1rem;">
+                    </div>
+
+                    <!-- Slot Selection Display -->
+                    <div class="slot-selection-display" style="margin-bottom:12px; display:none;">
+                        <label style="font-size:.75rem; font-weight:800; color:#475569; margin-bottom:8px; display:block;">
+                            🎯 Select Target Slot
+                        </label>
+                        <div class="slot-grid" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:8px;">
+                            <!-- Slot buttons will be dynamically generated here -->
                         </div>
-                        <div style="flex:1;">
-                            <label style="font-size:.7rem; font-weight:800; color:#475569;">TOTAL SLOTS</label>
-                            <input type="number"
-                                   class="total-input"
-                                   value=""
-                                   placeholder="Total"
-                                   data-item-id="<?php echo $itemId; ?>"
-                                   style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1;">
+                    </div>
+
+                    <!-- Hidden input to store selected slot -->
+                    <input type="hidden" class="slot-input" value="" data-item-id="<?php echo $itemId; ?>">
+                    
+                    <!-- Slot Summary Display -->
+                    <div class="slot-summary" style="padding:10px; background:#f0fdf4; border-radius:8px; border-left:3px solid #10b981; display:none;">
+                        <div style="font-size:0.8rem; color:#166534; font-weight:600;">
+                            <span class="summary-text">No slot selected</span>
                         </div>
                     </div>
                 </div>
@@ -325,7 +342,7 @@ background: linear-gradient(135deg, #ff9a9e 0%, #fad0c4 20%, #fbc2eb 40%, #a18cd
 
                 <!-- SPLIT BUTTON FOR THIS ITEM -->
                 <div style="margin-top:16px; text-align:center;">
-                    <button class="split-item-btn" onclick="splitItemCard(this)">
+                    <button class="split-item-btn" onclick="splitItemCardWithSlots(this)">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                             <path d="M12 5v14M5 12h14" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
@@ -771,6 +788,14 @@ window.submitRotation = function() {
 // SUBMIT PALLETIZING - DIRECTLY TO inbound_submit.php
 // ========================================
 window.submitPalletizeDirectly = function() {
+
+    if (!validateSlotSelections()) {
+    if (submitBtn) {
+        submitBtn.innerHTML = 'Confirm & Submit';
+        submitBtn.disabled = false;
+    }
+    return;
+}
     const containerNo = document.getElementById('containerScanInput')?.value?.trim();
     const area = areaSelect?.value || '';
     const erpOrderNo = document.getElementById('erpOrderNo')?.value;
@@ -929,4 +954,371 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('✅ Initialization complete!');
     console.log('📌 To test: Select "RM-AGV Warehouse" from dropdown');
 });
+
+// ========================================
+// SLOT MEMORY & DYNAMIC GRID FUNCTIONS
+// ========================================
+
+// Store slot configurations per item
+const slotConfigurations = new Map();
+
+/**
+ * Handle when user sets total slots
+ */
+window.handleTotalSlotsChange = function(input) {
+    const itemCard = input.closest('.item-card');
+    const itemId = input.dataset.itemId;
+    const totalSlots = parseInt(input.value) || 0;
+    
+    console.log(`🎯 Setting total slots for item ${itemId}: ${totalSlots}`);
+    
+    if (totalSlots < 1 || totalSlots > 99) {
+        console.warn('⚠️ Invalid slot count');
+        return;
+    }
+    
+    // Store configuration
+    slotConfigurations.set(itemId, {
+        totalSlots: totalSlots,
+        selectedSlot: null
+    });
+    
+    // Generate slot selection grid
+    generateSlotGrid(itemCard, itemId, totalSlots);
+    
+    // Show slot selection area
+    const slotDisplay = itemCard.querySelector('.slot-selection-display');
+    if (slotDisplay) slotDisplay.style.display = 'block';
+    
+    // Update summary
+    updateSlotSummary(itemCard, itemId);
+};
+
+/**
+ * Generate clickable slot grid
+ */
+function generateSlotGrid(itemCard, itemId, totalSlots) {
+    const slotGridContainer = itemCard.querySelector('.slot-grid');
+    if (!slotGridContainer) return;
+    
+    slotGridContainer.innerHTML = '';
+    
+    for (let i = 1; i <= totalSlots; i++) {
+        const slotBtn = document.createElement('button');
+        slotBtn.type = 'button';
+        slotBtn.textContent = i;
+        slotBtn.className = 'slot-btn';
+        slotBtn.dataset.slotNumber = i;
+        slotBtn.style.cssText = `
+            padding: 12px;
+            border: 2px solid #cbd5e1;
+            border-radius: 8px;
+            background: white;
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        `;
+        
+        slotBtn.onmouseover = function() {
+            if (!this.classList.contains('selected')) {
+                this.style.background = '#e0f2fe';
+                this.style.borderColor = '#0ea5e9';
+            }
+        };
+        
+        slotBtn.onmouseout = function() {
+            if (!this.classList.contains('selected')) {
+                this.style.background = 'white';
+                this.style.borderColor = '#cbd5e1';
+            }
+        };
+        
+        slotBtn.onclick = function() {
+            selectSlot(itemCard, itemId, i);
+        };
+        
+        slotGridContainer.appendChild(slotBtn);
+    }
+}
+
+/**
+ * Select a specific slot
+ */
+function selectSlot(itemCard, itemId, slotNumber) {
+    console.log(`✅ Selecting slot ${slotNumber} for item ${itemId}`);
+    
+    // Update stored configuration
+    const config = slotConfigurations.get(itemId);
+    if (config) {
+        config.selectedSlot = slotNumber;
+    }
+    
+    // Update hidden input
+    const slotInput = itemCard.querySelector('.slot-input');
+    if (slotInput) {
+        slotInput.value = slotNumber;
+    }
+    
+    // Update visual state of all slot buttons
+    const slotButtons = itemCard.querySelectorAll('.slot-btn');
+    slotButtons.forEach(btn => {
+        const btnSlot = parseInt(btn.dataset.slotNumber);
+        if (btnSlot === slotNumber) {
+            btn.classList.add('selected');
+            btn.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+            btn.style.color = 'white';
+            btn.style.borderColor = '#059669';
+            btn.style.transform = 'scale(1.05)';
+        } else {
+            btn.classList.remove('selected');
+            btn.style.background = 'white';
+            btn.style.color = '#334155';
+            btn.style.borderColor = '#cbd5e1';
+            btn.style.transform = 'scale(1)';
+        }
+    });
+    
+    // Update summary
+    updateSlotSummary(itemCard, itemId);
+}
+
+/**
+ * Update slot summary display
+ */
+function updateSlotSummary(itemCard, itemId) {
+    const summaryDiv = itemCard.querySelector('.slot-summary');
+    const summaryText = itemCard.querySelector('.summary-text');
+    
+    if (!summaryDiv || !summaryText) return;
+    
+    const config = slotConfigurations.get(itemId);
+    
+    if (!config || !config.totalSlots) {
+        summaryDiv.style.display = 'none';
+        return;
+    }
+    
+    summaryDiv.style.display = 'block';
+    
+    if (config.selectedSlot) {
+        summaryText.innerHTML = `📍 <strong>Slot ${config.selectedSlot}</strong> of <strong>${config.totalSlots}</strong> total slots`;
+    } else {
+        summaryText.innerHTML = `⚠️ Please select a slot (${config.totalSlots} available)`;
+    }
+}
+
+/**
+ * Handle grid input (optional integration with cascade container)
+ */
+window.handleGridInput = function(input) {
+    const itemCard = input.closest('.item-card');
+    const cascadeInput = itemCard.querySelector('.cascade-input');
+    
+    // You can add logic here to auto-populate based on cascade + grid combo
+    // For example, load saved slot configurations from localStorage
+    const cascadeValue = cascadeInput?.value || '';
+    const gridValue = input.value || '';
+    
+    if (cascadeValue && gridValue) {
+        const storageKey = `slots_${cascadeValue}_${gridValue}`;
+        const savedSlots = localStorage.getItem(storageKey);
+        
+        if (savedSlots) {
+            const totalInput = itemCard.querySelector('.total-input');
+            if (totalInput && !totalInput.value) {
+                totalInput.value = savedSlots;
+                handleTotalSlotsChange(totalInput);
+                console.log(`✅ Restored ${savedSlots} slots from memory for ${cascadeValue}-${gridValue}`);
+            }
+        }
+    }
+};
+
+/**
+ * Save slot configuration to localStorage when grid + cascade are set
+ */
+function saveSlotConfiguration(itemCard) {
+    const cascadeInput = itemCard.querySelector('.cascade-input');
+    const gridInput = itemCard.querySelector('.grid-input');
+    const totalInput = itemCard.querySelector('.total-input');
+    
+    const cascade = cascadeInput?.value?.trim();
+    const grid = gridInput?.value?.trim();
+    const total = totalInput?.value;
+    
+    if (cascade && grid && total) {
+        const storageKey = `inbound_slots_${cascade}_${grid}`;
+        localStorage.setItem(storageKey, total);
+        console.log(`💾 Saved inbound slot config: ${cascade}-${grid} = ${total} slots`);
+    }
+}
+
+/**
+ * 处理 Grid 输入时自动加载总槽数 (入库专用)
+ */
+window.handleGridInput = function(input) {
+    const itemCard = input.closest('.item-card');
+    const cascadeInput = itemCard.querySelector('.cascade-input');
+    
+    const cascadeValue = cascadeInput?.value || '';
+    const gridValue = input.value || '';
+    
+    if (cascadeValue && gridValue) {
+        const storageKey = `inbound_slots_${cascadeValue}_${gridValue}`;
+        const savedTotalSlots = localStorage.getItem(storageKey);
+        
+        if (savedTotalSlots) {
+            const totalInput = itemCard.querySelector('.total-input');
+            if (totalInput && !totalInput.value) {
+                totalInput.value = savedTotalSlots;
+                handleTotalSlotsChange(totalInput);
+                console.log(`✅ Restored ${savedTotalSlots} slots from memory for ${cascadeValue}-${gridValue}`);
+            }
+        }
+    }
+};
+
+/**
+ * Enhanced split function that preserves slot configuration
+ */
+window.splitItemCardWithSlots = function(button) {
+    const originalCard = button.closest('.item-card');
+    const originalQtyInput = originalCard.querySelector('.qty-input');
+    const originalQty = parseInt(originalQtyInput.value) || 0;
+    
+    if (originalQty <= 1) {
+        showError("Quantity must be greater than 1 to split");
+        return;
+    }
+    
+    const newCard = originalCard.cloneNode(true);
+    newCard.setAttribute('data-item-id', nextItemIndex);
+    
+    const newQtyInput = newCard.querySelector('.qty-input');
+    newQtyInput.setAttribute('data-item-index', nextItemIndex);
+    newQtyInput.setAttribute('data-item-id', nextItemIndex);
+    newQtyInput.value = '1';
+    newQtyInput.max = originalQty;
+    
+    originalQtyInput.value = originalQty - 1;
+    originalQtyInput.max = originalQty - 1;
+    
+    // Copy slot configuration to new card
+    const originalItemId = originalCard.dataset.itemId;
+    const originalConfig = slotConfigurations.get(originalItemId);
+    
+    if (originalConfig) {
+        slotConfigurations.set(nextItemIndex.toString(), {
+            totalSlots: originalConfig.totalSlots,
+            selectedSlot: originalConfig.selectedSlot
+        });
+        
+        // Regenerate slot grid in new card
+        const totalInput = newCard.querySelector('.total-input');
+        if (totalInput && originalConfig.totalSlots) {
+            totalInput.value = originalConfig.totalSlots;
+            setTimeout(() => {
+                generateSlotGrid(newCard, nextItemIndex.toString(), originalConfig.totalSlots);
+                
+                // Re-select the same slot
+                if (originalConfig.selectedSlot) {
+                    selectSlot(newCard, nextItemIndex.toString(), originalConfig.selectedSlot);
+                }
+            }, 100);
+        }
+    }
+    
+    // Update all data attributes in new card
+    newCard.querySelectorAll('.cascade-input, .grid-input, .slot-input, .total-input').forEach(input => {
+        input.dataset.itemId = nextItemIndex;
+    });
+    
+    // Reset checkbox
+    const newCheckbox = newCard.querySelector('.palletize-checkbox');
+    if (newCheckbox) {
+        newCheckbox.id = `palletize_${nextItemIndex}`;
+        newCheckbox.dataset.itemId = nextItemIndex;
+        newCheckbox.checked = false;
+        const label = newCard.querySelector(`label[for^="palletize_"]`);
+        if (label) label.setAttribute('for', `palletize_${nextItemIndex}`);
+    }
+    
+    originalCard.parentNode.insertBefore(newCard, originalCard.nextSibling);
+    
+    // Reapply area selection to new card
+    if (areaSelect && areaSelect.value === '03') {
+        const agvSection = newCard.querySelector('.agv-container-section');
+        if (agvSection) agvSection.style.display = 'block';
+    }
+    
+    nextItemIndex++;
+    
+    console.log(`✂️ Split item with slot config preserved: ${originalConfig?.totalSlots || 0} slots`);
+};
+
+/**
+ * Enhanced submission validation
+ */
+window.validateSlotSelections = function() {
+    const checkedItems = document.querySelectorAll('.palletize-checkbox:checked');
+    const isAGVArea = areaSelect?.value === '03';
+    
+    if (!isAGVArea) return true; // 非AGV区域不需要验证
+    
+    let allValid = true;
+    let errors = [];
+    
+    checkedItems.forEach(checkbox => {
+        const itemCard = checkbox.closest('.item-card');
+        const itemId = itemCard.dataset.itemId;
+        const config = slotConfigurations.get(itemId);
+        
+        // 验证总槽数
+        const totalInput = itemCard.querySelector('.total-input');
+        const totalSlots = parseInt(totalInput?.value) || 0;
+        
+        if (!totalSlots || totalSlots < 1) {
+            allValid = false;
+            errors.push(`Item ${itemId}: Total slots is required (must be ≥ 1)`);
+        }
+        
+        // 验证目标槽位
+        const slotInput = itemCard.querySelector('.slot-input');
+        const selectedSlot = parseInt(slotInput?.value) || 0;
+        
+        if (!selectedSlot || selectedSlot < 1) {
+            allValid = false;
+            errors.push(`Item ${itemId}: Please select a target slot`);
+        }
+        
+        // 验证：目标槽位不能大于总槽数
+        if (selectedSlot > totalSlots) {
+            allValid = false;
+            errors.push(`Item ${itemId}: Target slot (${selectedSlot}) exceeds total slots (${totalSlots})`);
+        }
+    });
+    
+    if (!allValid) {
+        showError("Slot Configuration Error:\n" + errors.join("\n"));
+        return false;
+    }
+    
+    return true;
+};
+
+// ========================================
+// UPDATE SUBMIT FUNCTION TO INCLUDE VALIDATION
+// ========================================
+// Modify your submitPalletizeDirectly function to call validateSlotSelections()
+// Add this at the beginning of submitPalletizeDirectly:
+/*
+if (!validateSlotSelections()) {
+    if (submitBtn) {
+        submitBtn.innerHTML = 'Confirm & Submit';
+        submitBtn.disabled = false;
+    }
+    return;
+}
+*/
 </script>

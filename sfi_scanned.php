@@ -25,7 +25,7 @@ function getSpecificOutOrderDetail($outOrderNo, $outOrderDId) {
         "sortType" => "",
         "search" => [
             "outOrderNo" => "$outOrderNo",
-            "outOrderStatus" => 2,
+            "outOrderStatus" => 1,
             "outOrderType" => 1,
             "skuNo" => "",
             "skuName" => "",
@@ -99,7 +99,7 @@ $params = [
     "search" => [
         "outOrderNo" => "",
         "outBillNo" => "",
-        "pickBillStatus" => 2,
+        "pickBillStatus" => 1,
         "pickBillType" => 1,
         "containerNo" => "$pdaInput",
         "isReplenishment" => 0
@@ -128,21 +128,18 @@ if (isset($result['data']) && is_array($result['data'])) {
     foreach ($result['data'] as $row) {
         $cascadeContainer = $row['cascadeContainerNo'] ?? '';
         $gridNumber = preg_replace('/[^0-9]/', '', $row['skuAttr2'] ?? '');
-
-        if (empty($cascadeContainer) || empty($gridNumber)) {
-            continue;
-        }
+        if (empty($cascadeContainer) || empty($gridNumber)) continue;
 
         $rawSlotData = trim($row['skuAttr3'] ?? '');
-        if (preg_match('/^(\d+)$/', $rawSlotData, $matches)) {
-            $slotNum = intval($matches[1]);
-            $key = $cascadeContainer . '_' . $gridNumber;
+        $key = $cascadeContainer . '_' . $gridNumber;
 
-            if (!isset($totalSlotsMap[$key])) {
-                $totalSlotsMap[$key] = $slotNum;
-            } else {
-                $totalSlotsMap[$key] = max($totalSlotsMap[$key], $slotNum); // Use max in case multiple rows exist
-            }
+        if (preg_match('/^(\d+)@(\d+)$/', $rawSlotData, $matches)) {
+            $totalSlots = intval($matches[1]); // 6
+            $totalSlotsMap[$key] = max($totalSlotsMap[$key] ?? 0, $totalSlots);
+        } 
+        elseif (preg_match('/^(\d+)$/', $rawSlotData, $matches)) {
+            $slotNum = intval($matches[1]); // 3
+            $totalSlotsMap[$key] = max($totalSlotsMap[$key] ?? 0, $slotNum);
         }
     }
 }
@@ -1224,21 +1221,42 @@ button[id^="toggleEye_"]:focus {
                 $cascadeContainer = $row['cascadeContainerNo'] ?? '';
                 $gridNumber = preg_replace('/[^0-9]/', '', $row['skuAttr2'] ?? '');
                 $key = $cascadeContainer . '_' . $gridNumber;
-                $totalSlots = isset($totalSlotsMap[$key]) ? $totalSlotsMap[$key] : 8;
-                $totalSlots = min(max(1, $totalSlots), 8); // Cap between 1 and 8
-
+                
+                // ===== 1. 解析 skuAttr3 (支持 6@2 格式) =====
                 $targetSlotNum = 1;
                 $actualSlotIdentifier = "1";
                 $rawSlotData = trim($row['skuAttr3'] ?? '');
+                
                 if (!empty($rawSlotData)) {
-                    if (preg_match('/^(\d+)$/', $rawSlotData, $matches)) {
+                    // ===== 处理格式 1: "6@2" (总槽数@目标槽位) =====
+                    if (preg_match('/^(\d+)@(\d+)$/', $rawSlotData, $matches)) {
+                        $totalSlotsFromData = intval($matches[1]);  // 6
+                        $targetSlotNum = intval($matches[2]);       // 2
+                        $actualSlotIdentifier = $targetSlotNum;
+                        
+                        // 更新总槽数映射（用于其他记录）
+                        $totalSlotsMap[$key] = max($totalSlotsMap[$key] ?? 0, $totalSlotsFromData);
+                    }
+                    // ===== 处理格式 2: "3" (纯数字，仅目标槽位) =====
+                    elseif (preg_match('/^(\d+)$/', $rawSlotData, $matches)) {
                         $targetSlotNum = intval($matches[1]);
-                        $actualSlotIdentifier = $rawSlotData;
-                        $targetSlotNum = min(max(1, $targetSlotNum), $totalSlots);
-                    } else {
+                        $actualSlotIdentifier = $targetSlotNum;
+                        
+                        // 出库格式：总槽数需要从其他记录推断
+                        $totalSlotsMap[$key] = max($totalSlotsMap[$key] ?? 0, $targetSlotNum);
+                    }
+                    // ===== 无效格式 =====
+                    else {
                         $actualSlotIdentifier = $rawSlotData;
                     }
                 }
+                
+                // ===== 2. 获取总槽数（从映射中读取） =====
+                $totalSlots = isset($totalSlotsMap[$key]) ? $totalSlotsMap[$key] : 8;
+                $totalSlots = min(max(1, $totalSlots), 8); // 限制 1-8
+                
+                // ===== 3. 限制目标槽位在有效范围内 =====
+                $targetSlotNum = min(max(1, $targetSlotNum), $totalSlots);
                 ?>
 
                 <div class="pick-form-container">
@@ -1524,6 +1542,70 @@ button[id^="toggleEye_"]:focus {
         function closeModal(index) {
             document.getElementById(`modal-${index}`).style.display = 'none';
             closeModalOverlay();
+        }
+
+
+        /**
+         * 当用户设置总槽数时，自动填充相同容器+网格的其他项
+         */
+        window.handleTotalSlotsChange = function(input) {
+            const itemCard = input.closest('.item-card');
+            const itemId = input.dataset.itemId;
+            const totalSlots = parseInt(input.value) || 0;
+            
+            if (totalSlots < 1 || totalSlots > 99) return;
+            
+            // 获取当前项的容器和网格
+            const cascadeInput = itemCard.querySelector('.cascade-input');
+            const gridInput = itemCard.querySelector('.grid-input');
+            const cascade = cascadeInput?.value?.trim() || '';
+            const grid = gridInput?.value?.trim() || '';
+            
+            if (!cascade || !grid) return;
+            
+            // 查找所有相同容器+网格的项
+            document.querySelectorAll('.item-card').forEach(otherCard => {
+                const otherCascade = otherCard.querySelector('.cascade-input')?.value?.trim() || '';
+                const otherGrid = otherCard.querySelector('.grid-input')?.value?.trim() || '';
+                const otherTotalInput = otherCard.querySelector('.total-input');
+                
+                // 如果容器+网格相同，且总槽数为空或不同，则自动填充
+                if (otherCascade === cascade && otherGrid === grid && otherTotalInput) {
+                    if (!otherTotalInput.value || parseInt(otherTotalInput.value) !== totalSlots) {
+                        otherTotalInput.value = totalSlots;
+                        console.log(`✅ Auto-filled total slots for item ${otherCard.dataset.itemId}`);
+                        
+                        // 触发 onchange 事件以更新槽位网格
+                        const event = new Event('change', { bubbles: true });
+                        otherTotalInput.dispatchEvent(event);
+                    }
+                }
+            });
+            
+            // 原有逻辑...
+            slotConfigurations.set(itemId, { totalSlots: totalSlots, selectedSlot: null });
+            generateSlotGrid(itemCard, itemId, totalSlots);
+            const slotDisplay = itemCard.querySelector('.slot-selection-display');
+            if (slotDisplay) slotDisplay.style.display = 'block';
+            updateSlotSummary(itemCard, itemId);
+        };
+
+        // 在 validateSlotSelections() 中添加
+        function highlightConflicts(conflictItems) {
+            // 先移除所有高亮
+            document.querySelectorAll('.item-card').forEach(card => {
+                card.style.border = '2px solid #e2e8f0';
+                card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.05)';
+            });
+            
+            // 高亮冲突项
+            conflictItems.forEach(itemId => {
+                const card = document.querySelector(`.item-card[data-item-id="${itemId}"]`);
+                if (card) {
+                    card.style.border = '3px solid #ef4444';
+                    card.style.boxShadow = '0 0 15px rgba(239, 68, 68, 0.5)';
+                }
+            });
         }
 
         function selectSlot(index, portNum, slotLabel) {
